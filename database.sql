@@ -1,15 +1,10 @@
+drop database cognizance;
 create database cognizance;
 use cognizance;
-
 create table authentication(username text, password text);
-
-create table tasks(task_id int primary key,task_name text,task_domain text,task_description text);
-
-create table members(member_id int primary key, member_name text, year_of_study int, mobile_numbers text,gender text);
-
-create table member_points(member_id int, task_id int, task_points int);
-
-
+create table members(member_id varchar(50) primary key, member_name text, year_of_study int, mobile_numbers text,gender text);
+create table member_points(member_id varchar(50) , task_id text, task_name int, task_points varchar(50));
+insert into authentication value('Cognizance','Coclub2024');
 
 
 
