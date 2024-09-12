@@ -3,17 +3,20 @@ const mysql = require('mysql2');
 const path = require('path');
 const bodyParser = require('body-parser');
 const session = require('express-session');
-
+const fs = require('fs');
 
 const app = express();
 const port = 3000; // Port number
 
 // Create a MySQL connection
 const connection = mysql.createConnection({
-    host: 'localhost',
-    user: 'test',
-    password: '1234',
-    database: 'cognizance'
+    host: 'cognizance.mysql.database.azure.com',
+    user: 'Cognizance',
+    password: 'Coclub2024',
+    database: 'cognizance',
+    ssl: {
+        ca: fs.readFileSync('E:/NK programs/Mysql/Mysql save/Codez/DigiCertGlobalRootCA.crt.pem')
+    }
 });
 
 // Connect to MySQL
@@ -111,11 +114,10 @@ app.get('/api/leaderboard', (req, res) => {
                IFNULL(SUM(mp.task_points), 0) AS points
         FROM members m
         LEFT JOIN member_points mp ON m.member_id = mp.member_id
-        LEFT JOIN tasks t ON mp.task_id = t.task_id
     `;
 
     if (category !== 'All') {
-        query += ` WHERE t.task_domain = '${category}'`;
+        query += ` WHERE mp.task_id = '${category}'`;
     }
 
     query += ` GROUP BY m.member_id, m.member_name ORDER BY points DESC;`;
@@ -193,83 +195,30 @@ app.post('/api/add-member', (req, res) => {
     });
 });
 
-// Endpoint to add a task
-app.post('/api/add-task', (req, res) => {
-    const { task_id, task_name, task_domain, task_description } = req.body;
-
-    // Validate required fields
-    if (!task_id || !task_name || !task_domain || !task_description) {
-        return res.status(400).json({ error: 'All fields are required' });
-    }
-
-    // Ensure task_id is lowercase
-    const lowerCaseTaskId = task_id.trim().toLowerCase();
-
-    // Check if the task ID already exists
-    connection.query('SELECT task_id FROM tasks WHERE task_id = ?', [lowerCaseTaskId], (err, results) => {
-        if (err) {
-            console.error('Database query error:', err);
-            return res.status(500).json({ error: 'Error checking task existence' });
-        }
-
-        if (results.length > 0) {
-            // Task already exists
-            res.json({ exists: true });
-        } else {
-            // Insert new task
-            const query = 'INSERT INTO tasks (task_id, task_name, task_domain, task_description) VALUES (?, ?, ?, ?)';
-            connection.query(query, [lowerCaseTaskId, task_name, task_domain, task_description], (error) => {
-                if (error) {
-                    console.error('Database query error:', error);
-                    return res.status(500).json({ error: 'Error adding task' });
-                }
-                res.json({ exists: false });
-            });
-        }
-    });
-});
-
-// Endpoint to fetch tasks by domain
-app.get('/api/tasks-by-domain', (req, res) => {
-    const domain = req.query.domain;
-    const sql = `
-        SELECT task_id, task_name 
-        FROM tasks 
-        WHERE task_domain = ?
-    `;
-    connection.query(sql, [domain], (err, results) => {
-        if (err) {
-            console.error('Database query error:', err);
-            return res.status(500).json({ error: err.message });
-        }
-        res.json({ tasks: results });
-    });
-});
 
 app.post('/api/update-points', (req, res) => {
-    const { member_id, task_id, points } = req.body;
+    const { member_id, task_id, task_name, points } = req.body;
 
-    if (!member_id || !task_id || !points) {
+    if (!member_id || !task_id || !points || !task_name) {
         return res.status(400).json({ error: 'All fields are required' });
     }
 
-    // Check if the member and task exist
+    // Check if the member exist
     const checkQuery = `
-        SELECT member_id, task_id 
+        SELECT member_id 
         FROM members m 
-        JOIN tasks t 
-        WHERE m.member_id = ? AND t.task_id = ?
+        WHERE m.member_id = ?
     `;
-    connection.query(checkQuery, [member_id, task_id], (err, results) => {
+    connection.query(checkQuery, member_id, (err, results) => {
         if (err) {
             console.error('Database query error:', err);
-            return res.status(500).json({ error: 'Error checking member or task existence' });
+            return res.status(500).json({ error: 'Error checking member existence' });
         }
 
         if (results.length > 0) {
             // Check if entry already exists in member_points
-            const recheck = `SELECT * FROM member_points WHERE member_id=? AND task_id=?`;
-            connection.query(recheck, [member_id, task_id], (error, existingEntry) => {
+            const recheck = `SELECT * FROM member_points WHERE member_id=? AND task_id=? AND task_name=?`;
+            connection.query(recheck, [member_id, task_id, task_name], (error, existingEntry) => {
                 if (error) {
                     console.error('Database query error:', error);
                     return res.status(500).json({ error: 'Error checking points' });
@@ -280,9 +229,9 @@ app.post('/api/update-points', (req, res) => {
                     const updateQuery = `
                         UPDATE member_points
                         SET task_points = ?
-                        WHERE member_id = ? AND task_id = ?
+                        WHERE member_id = ? AND task_id = ? AND task_name=?
                     `;
-                    connection.query(updateQuery, [points, member_id, task_id], (updateError) => {
+                    connection.query(updateQuery, [points, member_id, task_id, task_name], (updateError) => {
                         if (updateError) {
                             console.error('Database query error:', updateError);
                             return res.status(500).json({ error: 'Error updating points' });
@@ -292,10 +241,10 @@ app.post('/api/update-points', (req, res) => {
                 } else {
                     // Insert new record if it doesn't exist
                     const insertQuery = `
-                        INSERT INTO member_points (member_id, task_id, task_points)
-                        VALUES (?, ?, ?)
+                        INSERT INTO member_points (member_id, task_id, task_name, task_points)
+                        VALUES (?, ?, ?, ?)
                     `;
-                    connection.query(insertQuery, [member_id, task_id, points], (insertError) => {
+                    connection.query(insertQuery, [member_id, task_id, task_name, points], (insertError) => {
                         if (insertError) {
                             console.error('Database query error:', insertError);
                             return res.status(500).json({ error: 'Error inserting points' });
